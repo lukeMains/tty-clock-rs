@@ -1,5 +1,7 @@
 use std::env;
 
+use ncurses::{addstr, endwin, getch, initscr, refresh, setlocale, LcCategory};
+
 fn _init() {}
 
 fn _signal_handler(_signal: i8) {}
@@ -47,18 +49,31 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
-        1 => usage(),
+        1 => (),
         _ => {
-            // Parse arguments starting after
+            // Parse arguments starting after the program name.
             for arg in args[1..].into_iter() {
                 match arg.as_str() {
                     "-h" | "--help" => {
                         usage();
-                        break;
+                        return;
                     }
-                    _ => (),
+                    _ => (), // TODO: Add arguments form usage()
                 }
             }
         }
     }
+
+    /* If your locale env is unicode, you should use `setlocale`. */
+    let locale_conf = LcCategory::all;
+    setlocale(locale_conf, "en_US.UTF-8");
+
+    initscr(); // Start ncurses.
+
+    // Main Event Loop
+    addstr("Hello, world!"); // Print to the back buffer.
+    refresh(); // Update the screen.
+    getch(); // Wait for a key press.
+
+    endwin(); // Terminate ncurses.
 }

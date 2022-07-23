@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 ncurses = "5.101.0"
+signal-hook = "0.3.14"

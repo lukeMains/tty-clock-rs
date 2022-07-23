@@ -1,18 +1,98 @@
 use std::env;
+use std::io::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use ncurses::{addstr, endwin, getch, initscr, refresh, setlocale, LcCategory};
+//use ncurses;
+use signal_hook::{consts::TERM_SIGNALS, flag};
 
-fn _init() {}
+enum ColorPairs {
+    NoColor = 0,
+    Color,
+    Inverted,
+}
 
-fn _signal_handler(_signal: i8) {}
+#[allow(dead_code)]
+enum AnsiColors {
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+}
+
+const NUMBER_MATRIX: [[i16; 15]; 10] = [
+    [1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1], /* 0 */
+    [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], /* 1 */
+    [1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], /* 2 */
+    [1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], /* 3 */
+    [1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1], /* 4 */
+    [1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1], /* 5 */
+    [1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1], /* 6 */
+    [1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], /* 7 */
+    [1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1], /* 8 */
+    [1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], /* 9 */
+];
+
+fn init() {
+    /* If your locale env is unicode, you should use `setlocale`. */
+    let locale_conf = ncurses::LcCategory::all;
+    ncurses::setlocale(locale_conf, "en_US.UTF-8");
+
+    // Initialize Screen
+    ncurses::initscr();
+    ncurses::cbreak();
+    ncurses::noecho();
+    ncurses::curs_set(ncurses::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+    ncurses::clear();
+
+    // Setup color pairs
+    ncurses::start_color();
+    ncurses::init_pair(
+        ColorPairs::NoColor as i16,
+        ncurses::COLOR_BLACK,
+        ncurses::COLOR_BLACK,
+    );
+    ncurses::init_pair(
+        ColorPairs::Color as i16,
+        ncurses::COLOR_BLACK,
+        ncurses::COLOR_GREEN,
+    );
+    ncurses::init_pair(
+        ColorPairs::Inverted as i16,
+        ncurses::COLOR_GREEN,
+        ncurses::COLOR_BLACK,
+    );
+}
 
 fn _update_hour() {}
 
-fn _draw_number(_n: i8, _x: i8, _y: i8) {}
+fn draw_number(w: ncurses::WINDOW, n: usize, x: i32, y: i32) {
+    // TODO: Better variable names
+    let mut sy = y;
+    let mut sx = x;
+
+    for i in 0..30 {
+        if sy == y + 6 {
+            sy = y;
+            sx += 1;
+        }
+
+        ncurses::wbkgdset(w, ncurses::COLOR_PAIR(NUMBER_MATRIX[n][i / 2]));
+        ncurses::wmove(w, sx, sy);
+        ncurses::waddch(w, ' ' as u32);
+
+        sy += 1;
+    }
+    ncurses::wrefresh(w);
+}
 
 fn _draw_clock() {}
 
-fn _clock_move(_x: i8, _y: i8, _w: i8, _h: i8) {}
+fn _clock_move(_x: i32, _y: i32, _w: i32, _h: i32) {}
 
 fn _set_second() {}
 
@@ -45,18 +125,18 @@ fn usage() {
     println!("    -a nsdelay    Additional delay between two redraws in nanoseconds. Default 0ns.");
 }
 
-fn main() {
+fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
         1 => (),
         _ => {
             // Parse arguments starting after the program name.
-            for arg in args[1..].into_iter() {
+            for arg in args[1..].iter() {
                 match arg.as_str() {
                     "-h" | "--help" => {
                         usage();
-                        return;
+                        return Ok(());
                     }
                     _ => (), // TODO: Add arguments form usage()
                 }
@@ -64,16 +144,29 @@ fn main() {
         }
     }
 
-    /* If your locale env is unicode, you should use `setlocale`. */
-    let locale_conf = LcCategory::all;
-    setlocale(locale_conf, "en_US.UTF-8");
-
-    initscr(); // Start ncurses.
+    init();
 
     // Main Event Loop
-    addstr("Hello, world!"); // Print to the back buffer.
-    refresh(); // Update the screen.
-    getch(); // Wait for a key press.
+    let terminate = Arc::new(AtomicBool::new(false));
 
-    endwin(); // Terminate ncurses.
+    // Setup Signal Handlers
+    // TODO: Add SIGSTP (Ctrl-Z functionality)
+    TERM_SIGNALS.iter().for_each(|&signal| {
+        flag::register(signal, Arc::clone(&terminate)).unwrap();
+    });
+
+    // Make a window
+    let lines = 7; // Default Height
+    let cols = 35; // Default Width
+    let x = 0;
+    let y = 0;
+    let framewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
+    while !terminate.load(Ordering::Relaxed) {
+        draw_number(framewin, 0, 1, 1);
+        ncurses::refresh(); // Update the screen.
+    }
+
+    ncurses::endwin(); // Terminate ncurses.
+
+    Ok(())
 }

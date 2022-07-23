@@ -64,32 +64,50 @@ fn init() {
 
 fn _update_hour() {}
 
-fn draw_number(w: ncurses::WINDOW, n: usize, x: i32, y: i32) {
+fn draw_number(window: ncurses::WINDOW, n: usize, x: i32, y: i32) {
     // TODO: Better variable names
     let mut sy = y;
     let mut sx = x;
 
     // Use Inverted colors because were using space (' ') as our colored character.
-    ncurses::wbkgdset(w, ncurses::COLOR_PAIR(ColorPairs::Inverted as i16));
+    ncurses::wbkgdset(window, ncurses::COLOR_PAIR(ColorPairs::Inverted as i16));
 
-    for i in 0..30 {
+    for i in 0..15 {
         if sy == y + 6 {
             sy = y;
             sx += 1;
         }
 
-        ncurses::wmove(w, sx, sy);
-        if NUMBER_MATRIX[n][i / 2] == 1 {
+        ncurses::wmove(window, sx, sy);
+        if NUMBER_MATRIX[n][i] == 1 {
             // ncurses::waddch(w, '█' as u32);
-            ncurses::waddch(w, ' ' as u32);
+            ncurses::waddstr(window, "  ");
         }
 
-        sy += 1;
+        sy += 2;
     }
-    ncurses::wrefresh(w);
+    ncurses::wrefresh(window);
 }
 
-fn _draw_clock() {}
+fn draw_clock(window: ncurses::WINDOW) {
+    // Hours
+    draw_number(window, 0, 1, 1);
+    draw_number(window, 1, 1, 8);
+
+    // Dots
+    ncurses::wmove(window, 2, 16);
+    ncurses::waddstr(window, "  ");
+    ncurses::wmove(window, 4, 16);
+    ncurses::waddstr(window, "  ");
+
+    // Minutes
+    draw_number(window, 2, 1, 20);
+    draw_number(window, 3, 1, 27);
+
+    // If Seconds:
+    // Dots
+    // Seconds
+}
 
 fn _clock_move(_x: i32, _y: i32, _w: i32, _h: i32) {}
 
@@ -161,7 +179,7 @@ fn main() -> Result<(), Error> {
     let y = 0;
     let framewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
     while !terminate.load(Ordering::Relaxed) {
-        draw_number(framewin, 0, 1, 1);
+        draw_clock(framewin);
         ncurses::refresh(); // Update the screen.
     }
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use signal_hook::{consts::TERM_SIGNALS, flag};
 
 enum ColorPairs {
-    NoColor = 0,
+    NoColor,
     Color,
     Inverted,
 }
@@ -38,9 +38,8 @@ const NUMBER_MATRIX: [[i16; 15]; 10] = [
 ];
 
 fn init() {
-    /* If your locale env is unicode, you should use `setlocale`. */
-    let locale_conf = ncurses::LcCategory::all;
-    ncurses::setlocale(locale_conf, "en_US.UTF-8");
+    // Set locale
+    ncurses::setlocale(ncurses::LcCategory::all, "");
 
     // Initialize Screen
     ncurses::initscr();
@@ -51,21 +50,16 @@ fn init() {
 
     // Setup color pairs
     ncurses::start_color();
-    ncurses::init_pair(
-        ColorPairs::NoColor as i16,
-        ncurses::COLOR_BLACK,
-        ncurses::COLOR_BLACK,
-    );
-    ncurses::init_pair(
-        ColorPairs::Color as i16,
-        ncurses::COLOR_BLACK,
-        ncurses::COLOR_GREEN,
-    );
-    ncurses::init_pair(
-        ColorPairs::Inverted as i16,
-        ncurses::COLOR_GREEN,
-        ncurses::COLOR_BLACK,
-    );
+    let default = if ncurses::OK == ncurses::use_default_colors() {
+        -1
+    } else {
+        ncurses::COLOR_BLACK
+    };
+
+    // Negative one (-1) means default foreground/background
+    ncurses::init_pair(ColorPairs::NoColor as i16, default, default);
+    ncurses::init_pair(ColorPairs::Color as i16, ncurses::COLOR_GREEN, default);
+    ncurses::init_pair(ColorPairs::Inverted as i16, default, ncurses::COLOR_GREEN);
 }
 
 fn _update_hour() {}
@@ -75,15 +69,20 @@ fn draw_number(w: ncurses::WINDOW, n: usize, x: i32, y: i32) {
     let mut sy = y;
     let mut sx = x;
 
+    // Use Inverted colors because were using space (' ') as our colored character.
+    ncurses::wbkgdset(w, ncurses::COLOR_PAIR(ColorPairs::Inverted as i16));
+
     for i in 0..30 {
         if sy == y + 6 {
             sy = y;
             sx += 1;
         }
 
-        ncurses::wbkgdset(w, ncurses::COLOR_PAIR(NUMBER_MATRIX[n][i / 2]));
         ncurses::wmove(w, sx, sy);
-        ncurses::waddch(w, ' ' as u32);
+        if NUMBER_MATRIX[n][i / 2] == 1 {
+            // ncurses::waddch(w, '█' as u32);
+            ncurses::waddch(w, ' ' as u32);
+        }
 
         sy += 1;
     }

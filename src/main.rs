@@ -6,9 +6,11 @@ use std::sync::Arc;
 //use ncurses;
 use signal_hook::{consts::TERM_SIGNALS, flag};
 
+const DATEWINH: i32 = 3;
+
 enum ColorPairs {
     NoColor,
-    Color,
+    Normal,
     Inverted,
 }
 
@@ -58,7 +60,7 @@ fn init() {
 
     // Negative one (-1) means default foreground/background
     ncurses::init_pair(ColorPairs::NoColor as i16, default, default);
-    ncurses::init_pair(ColorPairs::Color as i16, ncurses::COLOR_GREEN, default);
+    ncurses::init_pair(ColorPairs::Normal as i16, ncurses::COLOR_GREEN, default);
     ncurses::init_pair(ColorPairs::Inverted as i16, default, ncurses::COLOR_GREEN);
 }
 
@@ -107,6 +109,14 @@ fn draw_clock(window: ncurses::WINDOW) {
     // If Seconds:
     // Dots
     // Seconds
+
+    ncurses::wrefresh(window);
+}
+
+fn draw_date(window: ncurses::WINDOW, datestr: &String) {
+    ncurses::wbkgdset(window, ncurses::COLOR_PAIR(ColorPairs::Normal as i16));
+    ncurses::mvwprintw(window, DATEWINH / 2, 1, datestr);
+    ncurses::wrefresh(window);
 }
 
 fn _clock_move(_x: i32, _y: i32, _w: i32, _h: i32) {}
@@ -172,14 +182,26 @@ fn main() -> Result<(), Error> {
         flag::register(signal, Arc::clone(&terminate)).unwrap();
     });
 
-    // Make a window
+    // Make time window
     let lines = 7; // Default Height
     let cols = 35; // Default Width
     let x = 0;
     let y = 0;
-    let framewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
+    let timewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
+
+    // Make date window
+    let datestr = String::from("2022-07-03");
+    let datestr_len: i32 = datestr.len().try_into().unwrap();
+    let datewin = ncurses::newwin(
+        DATEWINH,
+        datestr_len + 2,
+        y + lines - 1,
+        x + (cols / 2) - (datestr_len / 2) - 1,
+    );
+
     while !terminate.load(Ordering::Relaxed) {
-        draw_clock(framewin);
+        draw_clock(timewin);
+        draw_date(datewin, &datestr);
         ncurses::refresh(); // Update the screen.
     }
 

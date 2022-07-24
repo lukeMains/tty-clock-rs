@@ -3,15 +3,14 @@ use std::io::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-//use ncurses;
+use chrono::{DateTime, Local};
 use signal_hook::{consts::TERM_SIGNALS, flag};
 
 const DATEWINH: i32 = 3;
 
 enum ColorPairs {
-    NoColor,
-    Normal,
-    Inverted,
+    Normal = 0,
+    Inverted = 1,
 }
 
 #[allow(dead_code)]
@@ -24,6 +23,12 @@ enum AnsiColors {
     Magenta,
     Cyan,
     White,
+}
+
+#[allow(dead_code)]
+enum TimeFormat {
+    TwelveHour,
+    TwentyFourHour,
 }
 
 const NUMBER_MATRIX: [[i16; 15]; 10] = [
@@ -39,7 +44,7 @@ const NUMBER_MATRIX: [[i16; 15]; 10] = [
     [1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], /* 9 */
 ];
 
-fn init() {
+fn init() -> (ncurses::WINDOW, ncurses::WINDOW) {
     // Set locale
     ncurses::setlocale(ncurses::LcCategory::all, "");
 
@@ -59,20 +64,68 @@ fn init() {
     };
 
     // Negative one (-1) means default foreground/background
-    ncurses::init_pair(ColorPairs::NoColor as i16, default, default);
     ncurses::init_pair(ColorPairs::Normal as i16, ncurses::COLOR_GREEN, default);
     ncurses::init_pair(ColorPairs::Inverted as i16, default, ncurses::COLOR_GREEN);
+
+    // Make time window
+    let lines = 7; // Default Height
+    let cols = 54; // Default Width
+    let x = 0;
+    let y = 0;
+    let timewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
+
+    let (_, _, _, datestr) = get_time(TimeFormat::TwelveHour); // !FIXME: variable time format
+
+    // Make date window
+    let datestr_len: i32 = datestr.len().try_into().unwrap();
+    let datewin = ncurses::newwin(
+        DATEWINH,
+        datestr_len + 2,
+        y + lines - 1,
+        x + (cols / 2) - (datestr_len / 2) - 1,
+    );
+
+    (timewin, datewin)
 }
 
-fn _update_hour() {}
+fn get_time(format: TimeFormat) -> ((usize, usize), (usize, usize), (usize, usize), String) {
+    let dt: DateTime<Local> = Local::now();
+
+    let hour = match format {
+        TimeFormat::TwelveHour => dt.format("%I"),
+        TimeFormat::TwentyFourHour => dt.format("%H"),
+    }
+    .to_string();
+
+    let min = dt.format("%M").to_string();
+
+    let sec = dt.format("%S").to_string();
+
+    let datestr = match format {
+        TimeFormat::TwelveHour => dt.format("%F [%p]"),
+        TimeFormat::TwentyFourHour => dt.format("%F"),
+    }
+    .to_string();
+
+    // Parse Numbers
+    // TODO: Should I parse once and do math or split the string
+    // and parse twice?
+    let h1: usize = hour.as_str()[0..1].parse().unwrap();
+    let h2: usize = hour.as_str()[1..2].parse().unwrap();
+
+    let m1: usize = min.as_str()[0..1].parse().unwrap();
+    let m2: usize = min.as_str()[1..2].parse().unwrap();
+
+    let s1: usize = sec.as_str()[0..1].parse().unwrap();
+    let s2: usize = sec.as_str()[1..2].parse().unwrap();
+
+    ((h1, h2), (m1, m2), (s1, s2), datestr)
+}
 
 fn draw_number(window: ncurses::WINDOW, n: usize, x: i32, y: i32) {
     // TODO: Better variable names
     let mut sy = y;
     let mut sx = x;
-
-    // Use Inverted colors because were using space (' ') as our colored character.
-    ncurses::wbkgdset(window, ncurses::COLOR_PAIR(ColorPairs::Inverted as i16));
 
     for i in 0..15 {
         if sy == y + 6 {
@@ -80,21 +133,25 @@ fn draw_number(window: ncurses::WINDOW, n: usize, x: i32, y: i32) {
             sx += 1;
         }
 
+        ncurses::wbkgdset(window, ncurses::COLOR_PAIR(NUMBER_MATRIX[n][i]));
         ncurses::wmove(window, sx, sy);
-        if NUMBER_MATRIX[n][i] == 1 {
-            // ncurses::waddch(w, '█' as u32);
-            ncurses::waddstr(window, "  ");
-        }
+        // ncurses::waddch(w, '█' as u32);
+        ncurses::waddstr(window, "  ");
 
         sy += 2;
     }
     ncurses::wrefresh(window);
 }
 
-fn draw_clock(window: ncurses::WINDOW) {
+fn draw_clock(
+    window: ncurses::WINDOW,
+    hour: (usize, usize),
+    min: (usize, usize),
+    sec: (usize, usize),
+) {
     // Hours
-    draw_number(window, 0, 1, 1);
-    draw_number(window, 1, 1, 8);
+    draw_number(window, hour.0, 1, 1);
+    draw_number(window, hour.1, 1, 8);
 
     // Dots
     ncurses::wmove(window, 2, 16);
@@ -103,17 +160,24 @@ fn draw_clock(window: ncurses::WINDOW) {
     ncurses::waddstr(window, "  ");
 
     // Minutes
-    draw_number(window, 2, 1, 20);
-    draw_number(window, 3, 1, 27);
+    draw_number(window, min.0, 1, 20);
+    draw_number(window, min.1, 1, 27);
 
-    // If Seconds:
+    // TODO: Make seconds optional...
     // Dots
+    ncurses::wmove(window, 2, 35);
+    ncurses::waddstr(window, "  ");
+    ncurses::wmove(window, 4, 35);
+    ncurses::waddstr(window, "  ");
+
     // Seconds
+    draw_number(window, sec.0, 1, 39);
+    draw_number(window, sec.1, 1, 46);
 
     ncurses::wrefresh(window);
 }
 
-fn draw_date(window: ncurses::WINDOW, datestr: &String) {
+fn draw_date(window: ncurses::WINDOW, datestr: &str) {
     ncurses::wbkgdset(window, ncurses::COLOR_PAIR(ColorPairs::Normal as i16));
     ncurses::mvwprintw(window, DATEWINH / 2, 1, datestr);
     ncurses::wrefresh(window);
@@ -171,7 +235,7 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    init();
+    let (timewin, datewin) = init();
 
     // Main Event Loop
     let terminate = Arc::new(AtomicBool::new(false));
@@ -182,26 +246,10 @@ fn main() -> Result<(), Error> {
         flag::register(signal, Arc::clone(&terminate)).unwrap();
     });
 
-    // Make time window
-    let lines = 7; // Default Height
-    let cols = 35; // Default Width
-    let x = 0;
-    let y = 0;
-    let timewin = ncurses::newwin(lines, cols, y, x); // Start in top left corner.
-
-    // Make date window
-    let datestr = String::from("2022-07-03");
-    let datestr_len: i32 = datestr.len().try_into().unwrap();
-    let datewin = ncurses::newwin(
-        DATEWINH,
-        datestr_len + 2,
-        y + lines - 1,
-        x + (cols / 2) - (datestr_len / 2) - 1,
-    );
-
     while !terminate.load(Ordering::Relaxed) {
-        draw_clock(timewin);
+        let (hour, min, sec, datestr) = get_time(TimeFormat::TwelveHour);
         draw_date(datewin, &datestr);
+        draw_clock(timewin, hour, min, sec);
         ncurses::refresh(); // Update the screen.
     }
 

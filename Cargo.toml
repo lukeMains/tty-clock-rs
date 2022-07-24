@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+chrono = "0.4.19"
 ncurses = { version = "5.101.0", features=["wide"]}
 signal-hook = "0.3.14"
